@@ -1,0 +1,198 @@
+# MSRB GA VERSION: V1.2
+
+name: RB VPN TEST
+
+on:
+
+# SET CRON TIME
+# See here for more detail about cron: https://crontab.guru/examples.html
+
+  schedule:
+    - cron: '0 4 * * *' # Default: run at 00:00 everyday
+
+# TRIGGER ON PUSH / PULL
+
+#  push:
+#    branches: [ "main" ]
+#  pull_request:
+#    branches: [ "main" ]
+
+  workflow_dispatch:
+
+permissions: write-all
+  
+env:
+
+# EDIT DEFAULT_COMMAND AND DEFAULT_RETRY_COMMAND IF YOU WANT ~
+# BUT DON'T REMOVE --SESSION IN DEFAULT_COMMAND AND DEFAULT_RETRY_COMMAND !!!
+
+  DEFAULT_COMMAND: python ms_rewards_farmer.py --session --virtual-display --dont-check-for-updates --dont-check-internet --currency INR --superfast --skip-unusual --error --no-images --on-finish exit --discord https://discord.com/api/webhooks/1107657143999541318/742iXXhpr-U2fL3PdgzRYcEfs7PRW3Sgao2csLHfwv-Mj_jGQwaju63ap1elvaqXmlGj --print-to-webhook
+  DEFAULT_RETRY_COMMAND: python ms_rewards_farmer.py --session --virtual-display --dont-check-for-updates --dont-check-internet --currency INR --superfast --skip-unusual --error --no-images --on-finish exit --discord https://discord.com/api/webhooks/1107657143999541318/742iXXhpr-U2fL3PdgzRYcEfs7PRW3Sgao2csLHfwv-Mj_jGQwaju63ap1elvaqXmlGj --print-to-webhook
+  HAS_SESSION: 1
+
+# DON'T TOUCH THIS
+
+  CUSTOM_COMMAND: ${{ secrets.CUSTOM_COMMAND }}
+  CUSTOM_RETRY_COMMAND: ${{ secrets.CUSTOM_RETRY_COMMAND }}
+  GITHUB_TOKEN: ${{ github.token }}
+  ACCOUNTS: ${{ secrets.ACCOUNTS }}
+  SPECIFIC_VERSION: ${{ secrets.SPECIFIC_VERSION }}
+  CLIENT_OVPN: ${{ secrets.CLIENT_OVPN }}
+
+jobs:
+  Run_Bot:
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 120 # HASTAG THIS LINE IF YOU DON'T WANT TO LIMIT THE WORKFLOWS RUN TIME
+
+    steps:
+    - name: checkout
+      uses: actions/checkout@v3
+
+# SET REPO STUFF
+
+    - name: Clone the repository into Sub-folder named 'Microsoft-Rewards-bot' and move it back to main directory
+      run: |
+        if ${{ env.SPECIFIC_VERSION != '' }}; then
+          git clone https://github.com/farshadz1997/Microsoft-Rewards-bot
+          cd Microsoft-Rewards-bot
+          git reset --hard ${{ env.SPECIFIC_VERSION }}
+        else
+          git clone --depth 1 https://github.com/farshadz1997/Microsoft-Rewards-bot
+          cd Microsoft-Rewards-bot
+        fi
+        rm -rf .git .github
+        mv * ../
+        cd ${{ github.WORKSPACE }}
+        rm -rf Microsoft-Rewards-bot
+        ls -a
+
+    - name: Create / Recreate accounts.json
+      if: ${{ env.ACCOUNTS }}
+      run: |
+        wget -O accounts.json ${{ env.ACCOUNTS }} > /dev/null 2>&1
+        ls -a
+        
+    - name: Create / Recreate client.ovpn
+      if: ${{ env.CLIENT_OVPN }}
+      run: |
+        wget -O client.ovpn ${{ env.CLIENT_OVPN }} > /dev/null 2>&1
+        ls -a
+
+# USE CACHE IF HAS --SESSION
+# IF YOU FACE ANY ERROR, TRY TO DELETE OLD GITHUB ACTION CACHE
+
+    - name: Check if the command has --session or not
+      if: ${{ env.CUSTOM_COMMAND }}
+      run: |
+        if  [[ "${{ env.CUSTOM_COMMAND }}" == *"--session"* ]]
+        then
+          echo "HAS_SESSION=1" >> $GITHUB_ENV
+        else
+          echo "HAS_SESSION=0" >> $GITHUB_ENV
+        fi
+        echo $HAS_SESSION
+
+    - name: Cache Profiles
+      id: Cache-profiles
+      if: ${{ env.HAS_SESSION == 1 }}
+      uses: actions/cache@v2
+      with:
+        path: |
+          **/Profiles
+        key: cache-${{ hashFiles('accounts.json') }}-${{ env.CUSTOM_COMMAND }}
+  
+# INSTALL REQUIRED STUFF TO RUN BOT
+
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: pip install -r requirements.txt
+      
+      
+#SETUP VPN THROUGH OPENVPN   
+
+    - name: Install OpenVPN
+      run: |
+        sudo apt update
+        sudo apt install -y openvpn openvpn-systemd-resolved
+    - name: Connect to VPN
+      uses: "kota65535/github-openvpn-connect-action@v2"
+      with:
+        config_file: ./client.ovpn
+        username: ${{ secrets.OVPN_USERNAME }}
+        password: ${{ secrets.OVPN_PASSWORD }}
+        client_key: ${{ secrets.OVPN_CLIENT_KEY }}
+        tls_auth_key: ${{ secrets.OVPN_TLS_AUTH_KEY }}
+
+      # The openvpn process is automatically terminated in post-action phase
+
+# RUN THE BOT
+
+    - name: Run the Bot
+      run: |
+        ls -a
+        if ${{ env.CUSTOM_COMMAND != '' }}
+        then
+          echo "Run the Bot with CUSTOM_COMMAND"
+          ${{ env.CUSTOM_COMMAND }}
+        else
+          echo "Run the Bot with DEFAULT_COMMAND"
+          ${{ env.DEFAULT_COMMAND }}
+        fi
+    
+# RETRY THE BOT
+
+   # - name: Retry the Bot
+    #  if: ${{ failure() }}
+     # run: |
+      #  if ${{ env.CUSTOM_RETRY_COMMAND != '' }}
+       # then
+        #  echo "Retry the Bot with CUSTOM_RETRY_COMMAND"
+         # ${{ env.CUSTOM_RETRY_COMMAND }}
+        #else
+         # echo "Retry the Bot with DEFAULT_RETRY_COMMAND"
+          #${{ env.DEFAULT_RETRY_COMMAND }}
+        #fi
+
+# CHECK LOG_ACCOUNTS.TXT
+# HASTAG THIS STEP IF YOU DON'T WANT TO PRINT OUT THE LOG INTO GITHUB ACTION WORKFLOWS OUTPUT
+
+    - name: Check log after run
+      run: cat Logs_accounts.txt
+
+# USE THIS IF YOU WANT TO COMMIT ALL FILES CHANGES TO THE REPO
+
+#    - name: Git Auto Commit
+#      uses: stefanzweifel/git-auto-commit-action@v4
+#      with:
+#        skip_dirty_check: true
+#        skip_fetch: true
+#        skip_checkout: true
+#        push_options: -f
+
+# COMMIT LOG_ACCOUNTS.JSON TO YOUR REPO
+# HASTAG THIS IF YOU DON'T WANT IT
+
+   # - name: Commit log_accounts.json
+    #  run: |
+     #   git config --global user.name "GitHub Actions"
+      #    git config --global user.email "actions@github.com"
+       #   git add Logs_accounts.txt
+        #  git commit -m "Upload Logs_accounts.txt"
+         # git push -f
+
+# DELETE WORKFLOWS WHICH ARE OLDER THAN ... SEC
+
+  Delete_old_workflows:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old workflow runs
+        uses: MajorScruffy/delete-old-workflow-runs@v0.3.0
+        with:
+          repository: ${{ github.repository }}
+          older-than-seconds: 604800 # CHANGE THIS VALUE AS YOU NEED
